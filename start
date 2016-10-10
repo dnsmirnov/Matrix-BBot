@@ -1,0 +1,2 @@
+#!/bin/bash
+/usr/bin/env python ./bbot.py -c ./bbot.json -l bbot.log
