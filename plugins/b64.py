@@ -1,4 +1,4 @@
-from neb.plugins import Plugin
+from bbot.plugins import Plugin
 
 import base64
 
