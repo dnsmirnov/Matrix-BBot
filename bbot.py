@@ -6,12 +6,17 @@ import logging
 import logging.handlers
 import time
 
+from matrix_client.api import MatrixHttpApi
+from bbot.engine import Engine
 from bbot.matrix import MatrixConfig
 import bbot.sample
 
 from matrix_client.client import MatrixClient
 from matrix_client.api import MatrixRequestError
 from requests.exceptions import MissingSchema
+
+from plugins.b64 import Base64Plugin
+from plugins.time_utils import TimePlugin
 
 log = logging.getLogger(name=__name__)
 
@@ -50,6 +55,8 @@ def main(config):
     client = MatrixClient(config.homeserver)
     try:
 	token = client.login_with_password(username=config.username, password=config.password)
+	base_url = config.homeserver + "/_matrix/client/api/v1"
+	matrix = MatrixHttpApi(config.homeserver, token)
 
     except MatrixRequestError as e:
 	print(e)
@@ -69,24 +76,46 @@ def main(config):
 
     # todo: add in config config.default_room
     room = client.join_room("#admins:matrix.bingo-boom.ru")
-    room.send_text("stupid bot is coming ;-)")
+    # room.send_text("stupid bot is coming ;-)")
 
     # todo: add in config config.nickname
     user = client.get_user(config.username)
     log.info("Current Display Name: %s" % user.get_display_name())
     user.set_display_name("Matrix")
+    # todo: add default bit icon
+    # http://www.avatarsdb.com/avatars/matrix_rain.gif
+    user.set_avatar_url("http://www.avatarsdb.com/avatars/matrix_rain.gif")
 
-    room.add_listener(on_message)
-    client.start_listener_thread()
+    log.debug("Setting up plugins...")
+
+    plugins = [
+        TimePlugin,
+        Base64Plugin,
+    ]
+
+    engine = Engine(matrix, config)
+
+    for plugin in plugins:
+	engine.add_plugin(plugin)
+    engine.setup()
+
+#    room.add_listener(on_message)
+#    client.start_listener_thread()
 
     while True:
-	msg = bbot.sample.get_input()
-	if msg == "/quit":
-	    room.send_text("stupid bot is out :-(")
-	    break
-	else:
-	    room.send_text(msg)
+	try:
+	    log.info("Listening for incoming events.")
+	    engine.event_loop()
+	except Exception as e:
+	    log.error("Ruh roh: %s", e)
+	time.sleep(5)
 
+#	msg = bbot.sample.get_input()
+#	if msg == "/quit":
+#	    room.send_text("stupid bot is out :-(")
+#	    break
+#	else:
+#	    room.send_text(msg)
 
 if __name__ == '__main__':
     a = argparse.ArgumentParser("Run Matrix-BB.")

@@ -19,5 +19,5 @@ class MatrixConfig(object):
             homeserver=j[MatrixConfig.URL],
             username=j[MatrixConfig.USR],
             password=j[MatrixConfig.TOK],
-            admins=j[MatrixConfig.ADM]
+            admins=j[MatrixConfig.ADM],
         )

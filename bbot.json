@@ -5,5 +5,5 @@
     "url": "https://matrix.bingo-boom.ru",
     "token:": "fgdfgdfgdfgdfg",
     "user": "@matrix:matrix.bingo-boom.ru",
-    "admins": []
+    "admins": ["@dn_smirnov:matrix.bingo-boom.ru"]
 }
