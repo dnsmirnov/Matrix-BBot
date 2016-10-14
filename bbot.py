@@ -20,12 +20,14 @@ from plugins.time_utils import TimePlugin
 
 log = logging.getLogger(name=__name__)
 
+
 def load_config(loc):
     try:
 	with open(loc, 'r') as f:
-	    return MatrixConfig.from_file(f)
+            return MatrixConfig.from_file(f)
     except:
 	pass
+
 
 def configure_logging(logfile):
     log_format = "%(asctime)s %(levelname)s: %(message)s"
@@ -40,6 +42,7 @@ def configure_logging(logfile):
 	handler.setFormatter(formatter)
 	logging.getLogger('').addHandler(handler)
 
+
 def on_message(event):
     if event['type'] == "m.room.member":
         if event['membership'] == "join":
@@ -49,6 +52,7 @@ def on_message(event):
             print("{0}: {1}".format(event['sender'], event['content']['body']))
     else:
         print(event['type'])
+
 
 def main(config):
     log.info("Main module init ok ...")
@@ -61,11 +65,11 @@ def main(config):
     except MatrixRequestError as e:
 	print(e)
 	if e.code == 403:
-	    print("Bad username or password.")
-	    sys.exit(4)
+            print("Bad username or password.")
+            sys.exit(4)
 	else:
-	    print("Check your sever details are correct.")
-	    sys.exit(2)
+            print("Check your sever details are correct.")
+            sys.exit(2)
 
     except MissingSchema as e:
 	print("Bad URL format.")
@@ -104,10 +108,10 @@ def main(config):
 
     while True:
 	try:
-	    log.info("Listening for incoming events.")
-	    engine.event_loop()
+            log.info("Listening for incoming events.")
+            engine.event_loop()
 	except Exception as e:
-	    log.error("Ruh roh: %s", e)
+            log.error("Ruh roh: %s", e)
 	time.sleep(5)
 
 #	msg = bbot.sample.get_input()
@@ -116,6 +120,7 @@ def main(config):
 #	    break
 #	else:
 #	    room.send_text(msg)
+
 
 if __name__ == '__main__':
     a = argparse.ArgumentParser("Run Matrix-BB.")
@@ -140,8 +145,8 @@ if __name__ == '__main__':
 	log.info("Loading config from %s", args.config)
 	config = load_config(args.config)
 	if not config:
-	    log.info("Config not found.")
-	    print "Config file could not be loaded."
+            log.info("Config not found.")
+            print "Config file could not be loaded."
     else:
 	print "You probably want to run 'python bbot.py -c bbot.json'"
 
