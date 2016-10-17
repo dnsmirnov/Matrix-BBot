@@ -38,7 +38,9 @@ def configure_logging(logfile):
 
     if logfile:
 	formatter = logging.Formatter(log_format)
-	handler = logging.handlers.RotatingFileHandler(logfile, maxBytes=(1000 * 1000 * 20), backupCount=5)
+	handler = logging.handlers.RotatingFileHandler(logfile,
+                                                maxBytes=(1000 * 1000 * 20),
+                                                backupCount=5)
 	handler.setFormatter(formatter)
 	logging.getLogger('').addHandler(handler)
 
