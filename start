@@ -1,2 +1,2 @@
 #!/bin/bash
-/usr/bin/env python ./bbot.py -c ./bbot.json -l /var/www/html/bbot.txt
+/usr/bin/env python2.7 ./bbot.py -c ./bbot.json -l /var/www/html/bbot.txt
