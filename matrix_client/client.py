@@ -18,6 +18,8 @@ from time import sleep
 import logging
 import sys
 
+logger = logging.getLogger(__name__)
+
 
 class MatrixClient(object):
     """
@@ -79,10 +81,11 @@ class MatrixClient(object):
         self.api = MatrixHttpApi(base_url, token)
         self.api.validate_certificate(valid_cert_check)
         self.listeners = []
+        self.invite_listeners = []
+        self.left_listeners = []
+
         self.sync_token = None
         self.sync_filter = None
-
-        self.logger = logging.getLogger("matrix_client")
 
         """ Time to wait before attempting a /sync request after failing."""
         self.bad_sync_timeout_limit = 60 * 60
@@ -123,7 +126,7 @@ class MatrixClient(object):
         self._sync()
         return self.token
 
-    def login_with_password(self, username, password, limit=1):
+    def login_with_password(self, username, password, limit=10):
         """ Login to the homeserver.
 
         Args:
@@ -148,7 +151,6 @@ class MatrixClient(object):
 
         """ Limit Filter """
         self.sync_filter = '{ "room": { "timeline" : { "limit" : %i } } }' % limit
-
         self._sync()
         return self.token
 
@@ -196,14 +198,39 @@ class MatrixClient(object):
         """
         return self.rooms
 
-    def add_listener(self, callback):
+    def add_listener(self, callback, event_type=None):
         """ Add a listener that will send a callback when the client recieves
         an event.
 
         Args:
             callback (func(roomchunk)): Callback called when an event arrives.
+            event_type (str): The event_type to filter for.
         """
-        self.listeners.append(callback)
+        self.listeners.append(
+            {
+                'callback': callback,
+                'event_type': event_type
+            }
+        )
+
+    def add_invite_listener(self, callback):
+        """ Add a listener that will send a callback when the client receives
+        an invite.
+
+        Args:
+            callback (func(room_id, state)): Callback called when an invite arrives.
+        """
+        self.invite_listeners.append(callback)
+
+    def add_leave_listener(self, callback):
+        """ Add a listener that will send a callback when the client has left a room.
+        an invite request.
+
+        Args:
+            callback (func(room_id, room)): Callback called when the client
+            has left a room.
+        """
+        self.left_listeners.append(callback)
 
     def listen_for_events(self, timeout_ms=30000):
         """Deprecated. sync now pulls events from the request.
@@ -228,17 +255,17 @@ class MatrixClient(object):
                 self._sync(timeout_ms)
                 bad_sync_timeout = 5
             except MatrixRequestError as e:
-                self.logger.warning("A MatrixRequestError occured during sync.")
+                logger.warning("A MatrixRequestError occured during sync.")
                 if e.code >= 500:
-                    self.logger.warning("Problem occured serverside. Waiting %i seconds",
-                                        bad_sync_timeout)
+                    logger.warning("Problem occured serverside. Waiting %i seconds",
+                                   bad_sync_timeout)
                     sleep(bad_sync_timeout)
                     bad_sync_timeout = min(bad_sync_timeout * 2,
                                            self.bad_sync_timeout_limit)
                 else:
                     raise e
             except Exception as e:
-                self.logger.error("Exception thrown during sync\n %s", str(e))
+                logger.exception("Exception thrown during sync")
 
     def start_listener_thread(self, timeout_ms=30000):
         """ Start a listener thread to listen for events in the background.
@@ -253,7 +280,7 @@ class MatrixClient(object):
             thread.start()
         except:
             e = sys.exc_info()[0]
-            self.logger.error("Error: unable to start thread. %s", str(e))
+            logger.error("Error: unable to start thread. %s", str(e))
 
     def upload(self, content, content_type):
         """ Upload content to the home server and recieve a MXC url.
@@ -296,11 +323,27 @@ class MatrixClient(object):
         elif etype == "m.room.aliases":
             current_room.aliases = state_event["content"].get("aliases", None)
 
+        for listener in current_room.state_listeners:
+            if (
+                listener['event_type'] is None or
+                listener['event_type'] == state_event['type']
+            ):
+                listener['callback'](state_event)
+
     def _sync(self, timeout_ms=30000):
         # TODO: Deal with presence
         # TODO: Deal with left rooms
         response = self.api.sync(self.sync_token, timeout_ms, filter=self.sync_filter)
         self.sync_token = response["next_batch"]
+
+        for room_id, invite_room in response['rooms']['invite'].items():
+            for listener in self.invite_listeners:
+                listener(room_id, invite_room['invite_state'])
+
+        for room_id, left_room in response['rooms']['leave'].items():
+            for listener in self.left_listeners:
+                listener(room_id, left_room)
+
         for room_id, sync_room in response['rooms']['join'].items():
             if room_id not in self.rooms:
                 self._mkroom(room_id)
@@ -311,6 +354,14 @@ class MatrixClient(object):
 
             for event in sync_room["timeline"]["events"]:
                 room._put_event(event)
+
+                # Dispatch for client (global) listeners
+                for listener in self.listeners:
+                    if (
+                        listener['event_type'] is None or
+                        listener['event_type'] == event['type']
+                    ):
+                        listener['callback'](event)
 
     def get_user(self, user_id):
         """ Return a User by their id.
@@ -345,6 +396,7 @@ class Room(object):
         self.room_id = room_id
         self.client = client
         self.listeners = []
+        self.state_listeners = []
         self.events = []
         self.event_history_limit = 20
         self.name = None
@@ -380,20 +432,40 @@ class Room(object):
         Args:
             url (str): The mxc url of the image.
             name (str): The filename of the image.
-            imageinfo (): Extra information aboutt
+            imageinfo (): Extra information about the image.
         """
         return self.client.api.send_content(
             self.room_id, url, name, "m.image",
             extra_information=imageinfo
         )
 
-    def add_listener(self, callback):
+    def add_listener(self, callback, event_type=None):
         """ Add a callback handler for events going to this room.
 
         Args:
             callback (func(roomchunk)): Callback called when an event arrives.
+            event_type (str): The event_type to filter for.
         """
-        self.listeners.append(callback)
+        self.listeners.append(
+            {
+                'callback': callback,
+                'event_type': event_type
+            }
+        )
+
+    def add_state_listener(self, callback, event_type=None):
+        """ Add a callback handler for state events going to this room.
+
+        Args:
+            callback (func(roomchunk)): Callback called when an event arrives.
+            event_type (str): The event_type to filter for.
+        """
+        self.state_listeners.append(
+            {
+                'callback': callback,
+                'event_type': event_type
+            }
+        )
 
     def _put_event(self, event):
         self.events.append(event)
@@ -402,7 +474,8 @@ class Room(object):
 
         # Dispatch for room-specific listeners
         for listener in self.listeners:
-            listener(self, event)
+            if listener['event_type'] is None or listener['event_type'] == event['type']:
+                listener['callback'](self, event)
 
         # Dispatch for client (global) listeners
         for listener in self.client.listeners:
@@ -490,6 +563,21 @@ class Room(object):
                 return False
         except MatrixRequestError:
             return False
+
+    def send_state_event(self, event_type, content, state_key):
+        """ Send a state event to the room.
+
+        Args:
+            event_type (str): The type of event that you are sending.
+            content (): An object with the content of the message.
+            state_key (str, optional): A unique key to identify the state.
+        """
+        return self.client.api.send_state_event(
+            self.room_id,
+            event_type,
+            content,
+            state_key
+        )
 
     def update_room_topic(self):
         """ Get room topic
